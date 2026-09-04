@@ -1,12 +1,12 @@
 import asyncio
 from pydantic_graph import BaseNode, End, Graph, GraphRunContext
-from .models import RecruitingState  
-from .agents import run_job_analyst, run_evaluator, run_outreach  
-from .scraper import execute_real_scrape_sync, SAMPLE_CANDIDATES  
-from .persistence import persist_candidates, persist_outreach, persist_job  
-from .utils import hard_filter, rank_candidates  
+from .models import RecruitingState
+from .agents import run_job_analyst, run_evaluator, run_outreach
+from .scraper import execute_real_scrape_sync, SAMPLE_CANDIDATES
+from .persistence import persist_candidates, persist_outreach, persist_job
+from .utils import hard_filter, rank_candidates
 
-from .models import RankedCandidate, JobInput, Candidate
+from .models import RankedCandidate, JobInput
 from .config import cands_coll, jobs_coll
 
 from typing import Optional
@@ -19,85 +19,14 @@ class JobAnalystNode(BaseNode[RecruitingState, None, None]):
         state.notes.append(f"Job analysis done. Keywords: {', '.join(crit.keywords[:5])}")
         return SearchPlannerNode()
 
-async def synthesize_headhunted_candidates_with_groq(job, criteria) -> list[Candidate]:
-    import os, json, re
-    from groq import Groq
-    from .config import GROQ_API_KEY
-    api_key = GROQ_API_KEY or os.getenv("GROQ_API_KEY")
-    if not api_key:
-        return []
-    
-    req_skills = getattr(job, "must_have_skills", []) or getattr(job, "required_skills", []) or getattr(criteria, "skills", [])
-    pref_skills = getattr(job, "nice_to_have_skills", []) or getattr(job, "preferred_skills", [])
-    locs = [getattr(job, "country", "")] if getattr(job, "country", None) else getattr(criteria, "locations", ["Egypt"])
-    years = getattr(job, "min_experience_years", 2)
-    
-    prompt = f"""
-You are an expert Executive Headhunter and Technical Sourcing Specialist.
-A recruiter requested candidate sourcing for:
-Job Title: {getattr(job, 'title', 'Software Engineer')}
-Required Skills: {', '.join(req_skills)}
-Preferred Skills: {', '.join(pref_skills)}
-Locations: {', '.join(locs)}
-Min Years Experience: {years}
-
-Synthesize 3 distinct, highly realistic candidate profiles from LinkedIn matching this query.
-Each candidate must have a realistic name, realistic tech companies, authentic career progression, real skills, and a genuine-looking LinkedIn profile URL in format "https://www.linkedin.com/in/<first-last-id>".
-DO NOT output broken sample dummy links like "sample-ahmed-ali". Use authentic, realistic professional profiles.
-
-Return ONLY a JSON array of objects matching this schema:
-[
-  {{
-    "full_name": "Full Name",
-    "headline": "Current Title @ Company",
-    "profile_url": "https://www.linkedin.com/in/first-last-1234a",
-    "location": "City, Country",
-    "country": "Country",
-    "current_role": "Title",
-    "current_company": "Company",
-    "experience_years": 5,
-    "skills": ["Skill 1", "Skill 2"],
-    "previous_roles": ["Role 1 @ Company 1"],
-    "education": ["BSc Degree, University"],
-    "industries": ["Tech"],
-    "summary": "Detailed bio"
-  }}
-]
-"""
-    try:
-        client = Groq(api_key=api_key)
-        resp = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[
-                {"role": "system", "content": "You are an executive talent sourcer. Output ONLY a valid JSON array."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.4,
-            max_tokens=1500
-        )
-        content = resp.choices[0].message.content or ""
-        json_match = re.search(r'\[\s*\{.*\}\s*\]', content, re.DOTALL)
-        if json_match:
-            raw_list = json.loads(json_match.group())
-            return [Candidate(**item) for item in raw_list]
-    except Exception as e:
-        print(f"[SearchPlannerNode] Dynamic candidate synthesis error: {e}")
-    return []
-
 class SearchPlannerNode(BaseNode[RecruitingState, None, None]):
     async def run(self, ctx: GraphRunContext[RecruitingState, None]):
         state = ctx.state
         assert state.criteria is not None
-        try:
-            profiles = await asyncio.to_thread(execute_real_scrape_sync, state.criteria)
-        except Exception as e:
-            print(f"[SearchPlannerNode] Scraper error: {e}.")
-            profiles = []
+        profiles = await asyncio.to_thread(execute_real_scrape_sync, state.criteria)
         if not profiles:
-            state.notes.append("Real web search restricted by search provider. Sourcing matching candidates via Groq AI...")
-            profiles = await synthesize_headhunted_candidates_with_groq(state.job, state.criteria)
-            if not profiles:
-                profiles = SAMPLE_CANDIDATES[:]
+            state.notes.append("Real scrape returned nothing — using SAMPLE_CANDIDATES.")
+            profiles = SAMPLE_CANDIDATES[:]
         state.raw_candidates = profiles
         return HardFilterNode()
 

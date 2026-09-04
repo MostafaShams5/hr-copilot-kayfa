@@ -1,3 +1,24 @@
-2026/09/04-01:28:25.405 1d8fe Reusing MANIFEST /home/shams/Pictures/Kayfa/hr1/li_browser_profile/Default/Local Storage/leveldb/MANIFEST-000001
-2026/09/04-01:28:25.414 1d8fe Recovering log #3
-2026/09/04-01:28:25.414 1d8fe Reusing old log /home/shams/Pictures/Kayfa/hr1/li_browser_profile/Default/Local Storage/leveldb/000003.log 
+2026/09/04-17:03:54.023 6904 Reusing MANIFEST C:\Ali's folder\CS\Kayfa\HR Operating System\hr-copilot-kayfa\li_browser_profile\Default\Local Storage\leveldb/MANIFEST-000001
+2026/09/04-17:03:54.046 6904 Recovering log #12
+2026/09/04-17:03:54.063 6904 Reusing old log C:\Ali's folder\CS\Kayfa\HR Operating System\hr-copilot-kayfa\li_browser_profile\Default\Local Storage\leveldb/000012.log 
+2026/09/04-17:04:27.052 6944 Level-0 table #16: started
+2026/09/04-17:04:27.081 6944 Level-0 table #16: 36923 bytes OK
+2026/09/04-17:04:27.084 6944 Delete type=0 #12
+2026/09/04-17:05:51.533 6944 Level-0 table #18: started
+2026/09/04-17:05:51.556 6944 Level-0 table #18: 30674 bytes OK
+2026/09/04-17:05:51.560 6944 Delete type=0 #15
+2026/09/04-17:05:51.563 6944 Compacting 4@0 + 1@1 files
+2026/09/04-17:05:51.579 6944 Generated table #19@0: 60 keys, 4592 bytes
+2026/09/04-17:05:51.579 6944 Compacted 4@0 + 1@1 files => 4592 bytes
+2026/09/04-17:05:51.580 6944 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/09/04-17:05:51.583 6944 Delete type=2 #8
+2026/09/04-17:05:51.583 6944 Delete type=2 #11
+2026/09/04-17:05:51.583 6944 Delete type=2 #13
+2026/09/04-17:05:51.583 6944 Delete type=2 #16
+2026/09/04-17:05:51.583 6944 Delete type=2 #18
+2026/09/04-17:06:44.520 6944 Level-0 table #21: started
+2026/09/04-17:06:44.544 6944 Level-0 table #21: 37327 bytes OK
+2026/09/04-17:06:44.548 6944 Delete type=0 #17
+2026/09/04-17:08:16.223 6944 Level-0 table #23: started
+2026/09/04-17:08:16.240 6944 Level-0 table #23: 39068 bytes OK
+2026/09/04-17:08:16.243 6944 Delete type=0 #20

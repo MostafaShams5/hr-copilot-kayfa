@@ -7,12 +7,12 @@ import os
 from typing import Optional
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
-from .models import Candidate, CandidateCriteria  
+from .models import Candidate, CandidateCriteria
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 SAMPLE_CANDIDATES = [
-    Candidate(profile_url="https://www.linkedin.com/in/ahmed-ali-backend-lead",
+    Candidate(profile_url="https://www.linkedin.com/in/sample-ahmed-ali",
               full_name="Ahmed Ali", headline="Senior Python Backend Engineer",
               location="Cairo, Egypt", country="Egypt",
               current_role="Senior Backend Engineer", current_company="Vodafone Egypt",
@@ -21,7 +21,7 @@ SAMPLE_CANDIDATES = [
               previous_roles=["Backend Engineer @ ITI","Python Developer @ Swvl"],
               education=["BSc Computer Science, Cairo University"],
               industries=["E-learning","Telecom"]),
-    Candidate(profile_url="https://www.linkedin.com/in/fatima-zahra-mlops",
+    Candidate(profile_url="https://www.linkedin.com/in/sample-fatima-z",
               full_name="Fatima Zahra", headline="ML Engineer | Ex-Siemens",
               location="Rabat, Morocco", country="Morocco",
               current_role="Machine Learning Engineer", current_company="Siemens",
@@ -30,7 +30,7 @@ SAMPLE_CANDIDATES = [
               previous_roles=["Junior ML @ OCP"],
               education=["MSc AI, ENSIAS"],
               industries=["AI","Energy"]),
-    Candidate(profile_url="https://www.linkedin.com/in/omar-haddad-fullstack",
+    Candidate(profile_url="https://www.linkedin.com/in/sample-omar-h",
               full_name="Omar Haddad", headline="Full-Stack Engineer | EdTech",
               location="Amman, Jordan", country="Jordan",
               current_role="Full-Stack Engineer", current_company="Abwaab",
@@ -49,7 +49,7 @@ def build_google_queries(c: CandidateCriteria) -> list[str]:
     locations = c.locations if c.locations else [""]
     skills = c.skills if c.skills else [""]
 
-    # 1. Precise Cartesian combinations
+    # Create a Cartesian product of titles, locations, and skills
     for title in titles:
         for location in locations:
             for skill in skills:
@@ -58,18 +58,12 @@ def build_google_queries(c: CandidateCriteria) -> list[str]:
                 if location: parts.append(f'"{location}"')
                 if skill: parts.append(f'"{skill}"')
                 queries.append(" ".join(parts))
-
-    # 2. Broader flexible queries
-    for title in titles[:2]:
-        for loc in locations[:2]:
-            queries.append(f'site:linkedin.com/in {title} {loc}')
-    for skill in skills[:3]:
-        for loc in locations[:2]:
-            queries.append(f'site:linkedin.com/in {skill} {loc}')
-
-    # Remove duplicates and cap at 10 queries as requested
+                
+    # Remove duplicates just in case
     unique_queries = list(dict.fromkeys(queries))
-    return unique_queries[:10]
+    
+    # Limit to a maximum of 30 queries to avoid Google rate limits
+    return unique_queries[:30]
 def fetch_profile_sync_authed(url: str, context) -> Optional[Candidate]:
     if "eg.linkedin.com" in url:
         clean_url = url.replace("eg.linkedin.com", "www.linkedin.com")
@@ -80,12 +74,12 @@ def fetch_profile_sync_authed(url: str, context) -> Optional[Candidate]:
     
     try:
         page = context.new_page()
-        page.goto(clean_url, timeout=60000, wait_until="domcontentloaded")
+        page.goto(clean_url, timeout=30000, wait_until="domcontentloaded")
         try:
-            page.wait_for_function("document.title !== 'Join LinkedIn' && document.title !== ''", timeout=30000)
+            page.wait_for_function("document.title !== 'Join LinkedIn' && document.title !== ''", timeout=10000)
         except Exception:
             pass
-        page.wait_for_timeout(9000)
+        page.wait_for_timeout(5000)
         
         final_url = page.url
         page_title = page.title()
@@ -141,122 +135,91 @@ def execute_real_scrape_sync(criteria: CandidateCriteria) -> list[Candidate]:
     
     profiles = []
     
-    # Remove stale SingletonLock if exists to prevent Playwright crash
-    lock_path = os.path.join("./li_browser_profile", "SingletonLock")
-    if os.path.islink(lock_path) or os.path.exists(lock_path):
-        try:
-            os.unlink(lock_path)
-        except Exception:
-            pass
-
-    headless_mode = os.getenv("HEADLESS", "true").lower() in ("true", "1", "yes")
-
-    try:
-        with sync_playwright() as p:
-            context = p.chromium.launch_persistent_context(
-                user_data_dir="./li_browser_profile",
-                headless=headless_mode,
-                user_agent=UA,
-                args=['--disable-blink-features=AutomationControlled', '--no-sandbox']
-            )
-            context.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                window.navigator.chrome = { runtime: {} };
-                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-            """)
+    with sync_playwright() as p:
+        context = p.chromium.launch_persistent_context(
+            user_data_dir="./li_browser_profile",
+            headless=False,
+            user_agent=UA,
+            args=['--disable-blink-features=AutomationControlled']
+        )
+        context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            window.navigator.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+        """)
+        
+        page = context.new_page()
+        print("[Thread] Checking LinkedIn session...")
+        page.goto("https://www.linkedin.com/", timeout=30000)
+        page.wait_for_timeout(4000)
+        
+        if "login" in page.url or "signup" in page.url:
+            print("\nPLEASE LOG IN TO LINKEDIN IN THE BROWSER WINDOW!")
+            input("Press ENTER to continue after logging in...")
+            page.goto("https://www.linkedin.com/", timeout=30000)
+            page.wait_for_timeout(4000)
+        
+        print("[Thread] Session active! Searching Google with multiple queries...")
+        
+        all_urls = []
+        
+                # 3. Search Google for every query and collect all URLs
+        for q in queries:
+            print(f"[Thread] Querying: {q}")
             
-            page = context.new_page()
-            print("[Thread] Checking LinkedIn session...")
             try:
-                page.goto("https://www.linkedin.com/", timeout=30000, wait_until="domcontentloaded")
-                page.wait_for_timeout(3000)
-            except Exception as e:
-                print(f"[Thread] LinkedIn check warning: {e}")
-            
-            if "login" in page.url or "signup" in page.url:
-                print("\n[Thread] LinkedIn session not authenticated. Proceeding with Google & search queries...")
-            
-            print(f"[Thread] Searching with {len(queries)} queries (timeout 30s)...")
-            
-            all_urls = []
-            consecutive_timeouts = 0
-            
-            # 3. Search for every query and collect all real LinkedIn profile URLs
-            for q in queries:
-                print(f"[Thread] Querying: {q}")
+                page.goto(f"https://www.google.com/search?q={urllib.parse.quote(q)}&num={criteria.max_results}&hl=en", timeout=30000)
+                page.wait_for_timeout(4000)
                 
                 try:
-                    # Clean Google search without suspicious bot URL flags
-                    page.goto(f"https://www.google.com/search?q={urllib.parse.quote(q)}&hl=en", timeout=30000, wait_until="domcontentloaded")
-                    page.wait_for_timeout(3000)
-                    
-                    for btn_sel in ["button:has-text('Accept all')", "button:has-text('I agree')", "#L2AGLb", "button:has-text('Agree')"]:
-                        try:
-                            btn = page.locator(btn_sel)
-                            if btn.count() > 0:
-                                btn.first.click()
-                                page.wait_for_timeout(2000)
-                                break
-                        except Exception:
-                            pass
+                    accept_btn = page.locator("button:has-text('Accept all')")
+                    if accept_btn.count() > 0:
+                        accept_btn.first.click()
+                        page.wait_for_timeout(3000)
+                except Exception:
+                    pass
 
-                    html_content = page.content()
-                    found = re.findall(r'https?://(?:[a-z]{2}\.)?linkedin\.com/in/[A-Za-z0-9_%-]+', html_content)
-                    
-                    # Also parse /url?q= redirect links if wrapped by Google
-                    for wrapped in re.findall(r'/url\?q=(https?://[^&]+)', html_content):
-                        unquoted = urllib.parse.unquote(wrapped)
-                        if "linkedin.com/in/" in unquoted:
-                            found.append(unquoted)
-
-                    for u in found:
-                        clean_url = u.split("?")[0]
-                        if clean_url.endswith("%23"): clean_url = clean_url[:-3]
-                        clean_url = clean_url.rstrip("/")
-                        
-                        # Normalize URL to www. BEFORE checking for duplicates
-                        if "eg.linkedin.com" in clean_url:
-                            clean_url = clean_url.replace("eg.linkedin.com", "www.linkedin.com")
-                        elif "www.linkedin.com" not in clean_url:
-                            clean_url = clean_url.replace("linkedin.com", "www.linkedin.com")
-                            
-                        if clean_url not in all_urls and not clean_url.endswith("/in") and not clean_url.endswith("/sample-ahmed-ali"):
-                            all_urls.append(clean_url)
-                    
-                    consecutive_timeouts = 0
-                except Exception as e:
-                    print(f"[Thread] Google query error: {e}")
-                    consecutive_timeouts += 1
-                    if consecutive_timeouts >= 2:
-                        print("[Thread] Consecutive timeouts encountered on search network. Proceeding to profile processing...")
-                        break
-                    
-                time.sleep(2)
-
-            page.close()
-
-            if not all_urls:
-                print("[Thread] Google returned no URLs.")
-                try: context.close()
-                except: pass
-                return []
-
-            # 4. Slice to max_results
-            all_urls = all_urls[:criteria.max_results]
-            print(f"[Thread] Found {len(all_urls)} unique URLs. Scraping profiles...")
-            
-            for i, url in enumerate(all_urls):
-                print(f"[Thread] Scraping ({i+1}/{len(all_urls)}): {url}")
-                profile = fetch_profile_sync_authed(url, context)
-                if profile:
-                    print(f"[Thread]   -> Success: {profile.full_name}")
-                    profiles.append(profile)
-                time.sleep(2)
+                html_content = page.content()
+                found = re.findall(r'https?://(?:[a-z]{2}\.)?linkedin\.com/in/[A-Za-z0-9_%-]+', html_content)
                 
-            try: context.close()
-            except: pass
-    except Exception as e:
-        print(f"[Thread] Playwright scraping encountered error: {e}. Falling back to sample candidates.")
+                for u in found:
+                    clean_url = u.split("?")[0]
+                    if clean_url.endswith("%23"): clean_url = clean_url[:-3]
+                    
+                    # FIX: Normalize URL to www. BEFORE checking for duplicates
+                    if "eg.linkedin.com" in clean_url:
+                        clean_url = clean_url.replace("eg.linkedin.com", "www.linkedin.com")
+                    elif "www.linkedin.com" not in clean_url:
+                        clean_url = clean_url.replace("linkedin.com", "www.linkedin.com")
+                        
+                    if clean_url not in all_urls:
+                        all_urls.append(clean_url)
+                        
+            except Exception as e:
+                print(f"[Thread] Google blocked or aborted this search. Skipping. Error: {e}")
+                
+            time.sleep(3)
 
+        page.close()
+
+        if not all_urls:
+            print("[Thread] Google returned no URLs.")
+            context.close()
+            return []
+
+        # 4. Slice to max_results
+        all_urls = all_urls[:criteria.max_results]
+        print(f"[Thread] Found {len(all_urls)} unique URLs. Scraping profiles...")
+        
+        for i, url in enumerate(all_urls):
+            print(f"[Thread] Scraping ({i+1}/{len(all_urls)}): {url}")
+            profile = fetch_profile_sync_authed(url, context)
+            if profile:
+                print(f"[Thread]   -> Success: {profile.full_name}")
+                profiles.append(profile)
+            time.sleep(2)
+            
+        try: context.close()
+        except: pass
     return profiles

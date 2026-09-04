@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 from pydantic import BaseModel, Field, HttpUrl
-from .config import COMPANY_ABOUT  
+from .config import COMPANY_ABOUT
 
 class JobInput(BaseModel):
     job_id: str = Field(description="Unique identifier for the job posting.")

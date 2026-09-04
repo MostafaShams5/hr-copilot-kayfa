@@ -1,9 +1,9 @@
 import json
 import uuid
-import asyncio
+import asyncio # Make sure this is imported at the top of agents.py
 from pydantic_ai import Agent
-from .models import JobInput, CandidateCriteria, Candidate, CandidateEvaluation, RankedCandidate, OutreachMessage, EvalList, OutreachBatch  # <-- ADD DOT
-from .config import groq_model  
+from .models import JobInput, CandidateCriteria, Candidate, CandidateEvaluation, RankedCandidate, OutreachMessage, EvalList, OutreachBatch
+from .config import groq_model
 
 # 1. Job Extractor Agent (for free-text prompts)
 job_extractor = Agent(

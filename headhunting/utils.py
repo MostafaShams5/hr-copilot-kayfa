@@ -1,4 +1,4 @@
-from .models import JobInput, Candidate, CandidateEvaluation, RankedCandidate 
+from .models import JobInput, Candidate, CandidateEvaluation, RankedCandidate
 
 def hard_filter(job: JobInput, cands: list[Candidate]) -> list[Candidate]:
     kept: list[Candidate] = []

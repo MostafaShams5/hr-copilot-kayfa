@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
-from .models import RankedCandidate, OutreachMessage, JobInput 
-from .config import cands_coll, outreach_coll, jobs_coll 
+from .models import RankedCandidate, OutreachMessage, JobInput
+from .config import cands_coll, outreach_coll, jobs_coll
 
 async def persist_candidates(job_id: str, ranked: list[RankedCandidate]) -> None:
     """
