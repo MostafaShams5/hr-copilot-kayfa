@@ -137,32 +137,21 @@ def submit_candidate_assessment(token: str, submission: CandidateSubmission):
         pass
 
     try:
-        asm_data = db.get_by_token(token)
-        candidate_id = submission.candidate_id
-        if (not candidate_id or candidate_id in ["CAND-ONLINE", "CAND-EVAL"]) and asm_data:
-            candidate_id = asm_data.get("candidate_id", submission.candidate_id)
-        candidate_name = asm_data.get("candidate_name", candidate_id) if asm_data else candidate_id
-        seniority = asm_data.get("seniority_level", "SENIOR") if asm_data else "SENIOR"
-        questions = asm_data.get("questions", []) if asm_data else []
-
         evaluation = LLMService.evaluate_answers(
-            questions=questions,
-            answers=submission.answers,
-            seniority_level=seniority,
-            candidate_id=candidate_id,
-            candidate_name=candidate_name
+            questions=[],
+            answers=submission.answers
         )
         
         # Save to database
         db.save_evaluation_result(
-            assessment_id=asm_data.get("assessment_id", "ASM-SUBMITTED") if asm_data else "ASM-SUBMITTED",
-            candidate_id=candidate_id,
+            assessment_id="ASM-SUBMITTED",
+            candidate_id=submission.candidate_id,
             result=evaluation.model_dump()
         )
 
         return {
             "status": "EVALUATION_COMPLETE",
-            "candidate_id": candidate_id,
+            "candidate_id": submission.candidate_id,
             "interview_output": evaluation.model_dump()
         }
     except Exception as e:
