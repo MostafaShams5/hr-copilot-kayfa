@@ -39,7 +39,7 @@ class MongoDBStore:
         """Initializes PyMongo / Motor client and ensures unique indexes."""
         try:
             from pymongo import MongoClient, ASCENDING
-            self.client = MongoClient(self.uri, serverSelectionTimeoutMS=5000)
+            self.client = MongoClient(self.uri, serverSelectionTimeoutMS=2000)
             self.db = self.client[self.db_name]
             
             # Verify connection
