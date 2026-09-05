@@ -12,113 +12,10 @@ from .database import db
 logger = logging.getLogger("InterviewGraph")
 
 
-import os
-import re
-import json
-
-def synthesize_questions_with_groq(state: InterviewAgentState) -> List[QuestionModel]:
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        return []
-
-    ctx = state.job_context
-    candidate_name = state.candidate_name or "Candidate"
-    skills_str = ", ".join(ctx.required_skills) if ctx.required_skills else "Software Engineering"
-    jd_str = getattr(ctx, "job_description", "") or f"High-scale engineering role for {ctx.title}"
-    cv_str = getattr(ctx, "candidate_cv_summary", "") or "Demonstrated backend and systems background"
-
-    prompt = f"""
-You are a Staff Technical Assessment Designer at Kayfa Academy.
-Generate a custom, high-signal technical and behavioral interview for:
-Candidate Name: {candidate_name}
-Target Role: {ctx.title}
-Seniority Tier: {ctx.seniority_level}
-Domain: {ctx.domain}
-Required Skills: {skills_str}
-Job Description Context: {jd_str}
-Candidate Background: {cv_str}
-
-Create exactly 4 tailored questions:
-1. Technical MCQ: Hard architectural or distributed systems trade-off for {ctx.title}. 4 distinct options, exactly ONE correct answer.
-2. Technical Open-Ended: In-depth design scenario question detailing architectural strategy, rollback, and data consistency.
-3. Diagnostic MCQ: Real-world latency, debugging, or query optimization problem for {skills_str}. 4 distinct options, exactly ONE correct answer.
-4. Behavioral Scenario: Conflict resolution, Sev-1 incident leadership, or stakeholder prioritization calibrated to {ctx.seniority_level}.
-
-Return ONLY a valid JSON array of 4 objects matching this exact structure:
-[
-  {{
-    "question_id": "TECH-CORE-01",
-    "question_type": "mcq",
-    "prompt": "...",
-    "track": "TECHNICAL",
-    "seniority_target": "{ctx.seniority_level}",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "ideal_rubric": "Explanation of correct choice",
-    "required_keywords": ["keyword1", "keyword2"],
-    "weight": 1.5
-  }},
-  {{
-    "question_id": "TECH-CORE-02",
-    "question_type": "typed",
-    "prompt": "...",
-    "track": "TECHNICAL",
-    "seniority_target": "{ctx.seniority_level}",
-    "options": null,
-    "ideal_rubric": "Expected key design trade-offs",
-    "required_keywords": ["keyword1", "keyword2"],
-    "weight": 2.0
-  }},
-  {{
-    "question_id": "TECH-DIAG-03",
-    "question_type": "mcq",
-    "prompt": "...",
-    "track": "TECHNICAL",
-    "seniority_target": "{ctx.seniority_level}",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "ideal_rubric": "Diagnostic rationale",
-    "required_keywords": ["keyword1", "keyword2"],
-    "weight": 1.0
-  }},
-  {{
-    "question_id": "BEHAV-LEAD-04",
-    "question_type": "typed",
-    "prompt": "...",
-    "track": "BEHAVIORAL",
-    "seniority_target": "{ctx.seniority_level}",
-    "options": null,
-    "ideal_rubric": "Ownership, communication, and resolution approach",
-    "required_keywords": ["keyword1", "keyword2"],
-    "weight": 1.5
-  }}
-]
-"""
-    try:
-        from groq import Groq
-        client = Groq(api_key=api_key)
-        resp = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[
-                {"role": "system", "content": "You are a professional technical interviewer. Output ONLY a valid JSON array."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            max_tokens=1500
-        )
-        content = resp.choices[0].message.content or ""
-        json_match = re.search(r'\[\s*\{.*\}\s*\]', content, re.DOTALL)
-        if json_match:
-            raw_list = json.loads(json_match.group())
-            return [QuestionModel(**q) for q in raw_list]
-    except Exception as e:
-        logger.warning(f"Groq question synthesis failed, falling back to calibrated template: {e}")
-    return []
-
-
 def question_synthesis_node(state: InterviewAgentState) -> InterviewAgentState:
     """
     Node 1: Synthesizes technical and behavioral questions tuned dynamically
     to the Job Role, Seniority Level (Junior/Mid/Senior/Staff), and JD Skill Requirements.
-    Uses Groq LLM with deterministic rubric fallback.
     """
     ctx: JobContextModel = state.job_context
     seniority = ctx.seniority_level
@@ -126,15 +23,9 @@ def question_synthesis_node(state: InterviewAgentState) -> InterviewAgentState:
 
     logger.info(f"Synthesizing {seniority} level questions for role: '{title}' (Candidate: {state.candidate_name})")
 
-    # 1. Try dynamic Groq LLM synthesis
-    groq_questions = synthesize_questions_with_groq(state)
-    if groq_questions and len(groq_questions) >= 3:
-        state.questions = groq_questions
-        return state
-
     questions: List[QuestionModel] = []
 
-    # 2. Deterministic Template Fallback
+    # 1. Technical Concurrency & Data Consistency (Calibrated by Seniority)
     if seniority in ["SENIOR", "STAFF_PRINCIPAL"]:
         questions.append(
             QuestionModel(
