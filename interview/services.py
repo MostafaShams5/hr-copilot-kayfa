@@ -22,13 +22,10 @@ class LLMService:
     def evaluate_answers(
         questions: List[QuestionModel] = None,
         answers: List[AnswerItem] = None,
-        seniority_level: str = "SENIOR",
-        candidate_id: str = "CAND-EVAL",
-        candidate_name: Optional[str] = None
+        seniority_level: str = "SENIOR"
     ) -> InterviewOutput:
         questions = questions or []
         answers = answers or []
-        candidate_name = candidate_name or candidate_id
         all_text = " ".join([f"{a.selected_option or ''} {a.answer_text or ''}" for a in answers]).strip()
         lower_text = all_text.lower()
 
@@ -41,17 +38,17 @@ class LLMService:
         ]
         anti_cheat_flags = []
 
-        if any(re.search(pat, lower_text) for pat in gibberish_patterns) or len(all_text) < 15:
+        if any(re.search(pat, lower_text) for pat in gibberish_patterns) or len(all_text) < 25:
             anti_cheat_flags.append("Nonsensical / Gibberish / Placeholder Input Detected")
         
-        if len(set(lower_text.split())) < 5:
+        if len(set(lower_text.split())) < 8:
             anti_cheat_flags.append("Low Lexical Diversity (Repetitive filler words)")
 
         if anti_cheat_flags:
             db.record_evaluation_event(tokens_used=1200, cache_hit=True)
             return InterviewOutput(
-                candidate_id=candidate_id,
-                assessment_id="ASM-SUBMITTED",
+                candidate_id="CAND-EVAL",
+                assessment_id="ASM-EVAL",
                 technical_score=0,
                 hr_score=0,
                 interview_score=0,
@@ -70,107 +67,8 @@ class LLMService:
                 ],
                 reasoning="Automated Gate Failure: Candidate responses contained recognized gibberish or fatal lack of substance. Candidate is rejected automatically.",
                 anti_cheat_flags=anti_cheat_flags,
-                probing_questions_for_manager=["Verify candidate identity and reason for incoherent test submission."],
                 evaluation_confidence=0.99
             )
-
-        # -------------------------------------------------------------
-        # 2. Real Groq LLM Answer Evaluation
-        # -------------------------------------------------------------
-        api_key = os.getenv("GROQ_API_KEY")
-        if api_key:
-            try:
-                from groq import Groq
-                client = Groq(api_key=api_key)
-                
-                qa_formatted = []
-                for idx, a in enumerate(answers):
-                    q_match = next((q for q in questions if getattr(q, 'question_id', '') == a.question_id), None)
-                    q_prompt = getattr(q_match, 'prompt', f"Question {idx+1}") if q_match else f"Question {a.question_id}"
-                    ans_val = f"Selected: {a.selected_option}. " if a.selected_option else ""
-                    ans_val += f"Typed Answer: {a.answer_text}"
-                    qa_formatted.append(f"Question {idx+1} ({a.question_id}): {q_prompt}\nCandidate Response: {ans_val}\n")
-
-                eval_prompt = f"""
-You are a Principal Engineering & Behavioral Evaluator at Kayfa Academy.
-Evaluate this candidate's assessment responses thoroughly:
-
-Candidate Name: {candidate_name}
-Candidate ID: {candidate_id}
-Target Seniority: {seniority_level}
-
-Candidate Submissions:
-{"".join(qa_formatted)}
-
-Evaluate rigorously:
-1. Technical architecture, concurrency handling, and system design realism.
-2. Behavioral maturity, incident leadership, and clarity of articulation.
-3. Gate status rule: "PASSED" only if technical_score >= 70 AND hr_score >= 70, otherwise "FAILED".
-
-Return ONLY a JSON object matching this schema:
-{{
-  "technical_score": <number 0-100>,
-  "hr_score": <number 0-100>,
-  "interview_score": <number 0-100>,
-  "gate_status": "PASSED" or "FAILED",
-  "strengths": [<list of 2 to 4 concrete candidate strengths>],
-  "remaining_gaps": [<list of 1 to 3 specific gaps or missed trade-offs>],
-  "behavioral_red_flags": [<list of flags, or []>],
-  "reasoning": "<thorough 2-3 sentence executive summary of the evaluation>",
-  "probing_questions_for_manager": [<list of 2 specific 1-on-1 interview questions for the Hiring Manager>],
-  "sub_scores": [
-    {{"dimension": "Architectural Soundness", "score": <0-100>, "feedback": "<feedback>"}},
-    {{"dimension": "Concurrency & High-Load Handling", "score": <0-100>, "feedback": "<feedback>"}},
-    {{"dimension": "Observability & Incident Rigor", "score": <0-100>, "feedback": "<feedback>"}},
-    {{"dimension": "Communication Precision", "score": <0-100>, "feedback": "<feedback>"}}
-  ],
-  "evaluation_confidence": 0.95
-}}
-"""
-                resp = client.chat.completions.create(
-                    model="openai/gpt-oss-120b",
-                    messages=[
-                        {"role": "system", "content": "You are a senior technical hiring evaluator. Output ONLY a valid JSON object."},
-                        {"role": "user", "content": eval_prompt}
-                    ],
-                    temperature=0.2,
-                    max_tokens=1500
-                )
-                content = resp.choices[0].message.content or ""
-                json_match = re.search(r'\{.*\}', content, re.DOTALL)
-                if json_match:
-                    parsed = json.loads(json_match.group())
-                    sub_scores_list = []
-                    for sub in parsed.get("sub_scores", []):
-                        sub_scores_list.append(SubScoreBreakdown(
-                            dimension=sub.get("dimension", "General"),
-                            score=float(sub.get("score", 75)),
-                            weight=0.25,
-                            feedback=sub.get("feedback", "")
-                        ))
-                    
-                    db.record_evaluation_event(tokens_used=2100, cache_hit=False)
-                    return InterviewOutput(
-                        candidate_id=candidate_id,
-                        assessment_id="ASM-SUBMITTED",
-                        technical_score=float(parsed.get("technical_score", 75)),
-                        hr_score=float(parsed.get("hr_score", 75)),
-                        interview_score=float(parsed.get("interview_score", 75)),
-                        gate_status=str(parsed.get("gate_status", "PASSED")).upper(),
-                        strengths=parsed.get("strengths", ["Demonstrated solid core fundamentals"]),
-                        remaining_gaps=parsed.get("remaining_gaps", []),
-                        behavioral_red_flags=parsed.get("behavioral_red_flags", []),
-                        sub_scores=sub_scores_list if sub_scores_list else [
-                            SubScoreBreakdown(dimension="Architectural Soundness", score=float(parsed.get("technical_score", 75)), weight=0.35, feedback="Evaluated via Groq LLM"),
-                            SubScoreBreakdown(dimension="Communication Precision", score=float(parsed.get("hr_score", 75)), weight=0.25, feedback="Evaluated via Groq LLM")
-                        ],
-                        reasoning=parsed.get("reasoning", "Candidate evaluation completed successfully via Groq LLM."),
-                        probing_questions_for_manager=parsed.get("probing_questions_for_manager", ["Follow up on distributed database failovers."]),
-                        anti_cheat_flags=[],
-                        evaluation_confidence=float(parsed.get("evaluation_confidence", 0.95))
-                    )
-            except Exception as e:
-                logger.warning(f"Groq answer evaluation failed, falling back to rubric: {e}")
 
         # -------------------------------------------------------------
         # 2. Multi-Dimensional Scoring Rubrics
@@ -272,8 +170,8 @@ Return ONLY a JSON object matching this schema:
         db.record_evaluation_event(tokens_used=2400, cache_hit=True)
 
         return InterviewOutput(
-            candidate_id=candidate_id,
-            assessment_id="ASM-SUBMITTED",
+            candidate_id="CAND-EVAL",
+            assessment_id="ASM-EVAL",
             technical_score=overall_tech,
             hr_score=overall_hr,
             interview_score=composite,
