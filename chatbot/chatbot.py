@@ -56,7 +56,7 @@ def sanitize_tool_arg(val: Optional[str]) -> Optional[str]:
         "دبي": "Dubai",
         "امارات": "UAE",
         "إمارات": "UAE",
-        "قاهر": "Cairo",
+        "قاهره": "Cairo",
         "مصر": "Egypt",
         "ريموت": "Remote",
         "عن بعد": "Remote",
